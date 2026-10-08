@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f0f2f5;
+  --bg-tertiary: #e7ebf0;
+  --text-primary: #0f1419;
+  --text-secondary: #707579;
+  --border: #e1e4e8;
+  --bubble-out: #0088cc;
+  --bubble-in: #ffffff;
+}
+
+.dark {
+  --bg-primary: #17212b;
+  --bg-secondary: #0e1621;
+  --bg-tertiary: #1c2733;
+  --text-primary: #ffffff;
+  --text-secondary: #7d8b99;
+  --border: #1c2733;
+  --bubble-out: #2b5278;
+  --bubble-in: #182533;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* Chat bubble */
+.bubble-out {
+  background: var(--bubble-out);
+  color: white;
+}
+.bubble-in {
+  background: var(--bubble-in);
+  color: var(--text-primary);
+}
+
+/* Input focus */
+input:focus, textarea:focus {
+  outline: none;
+}
+
+/* Hide scrollbar but keep scroll */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Typing dots animation */
+.typing-dot {
+  animation: typingBounce 1.4s infinite ease-in-out;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-6px); opacity: 1; }
+}
+
+/* Pulse for online indicator */
+.online-pulse {
+  animation: onlinePulse 2s infinite;
+}
+@keyframes onlinePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 200, 83, 0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(0, 200, 83, 0); }
+}

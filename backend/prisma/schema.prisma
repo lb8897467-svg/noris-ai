@@ -1,0 +1,461 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth & Users ───────────────────────────────────────────
+
+model User {
+  id            String   @id @default(cuid())
+  phone         String   @unique
+  phoneVerified Boolean  @default(false)
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  passwordHash  String?
+  username      String   @unique
+  role          Role     @default(USER)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastSeen      DateTime @default(now())
+  isOnline      Boolean  @default(false)
+
+  profile       Profile?
+  settings       UserSettings?
+  sessions       Session[]
+  otpCodes       OtpCode[]
+  sentRequests   FriendRequest[] @relation("FriendRequest_Sender")
+  recvRequests   FriendRequest[] @relation("FriendRequest_Receiver")
+  contacts       Contact[]       @relation("Contact_Owner")
+  contactOf      Contact[]       @relation("Contact_Target")
+  blocks         Block[]         @relation("Block_Blocker")
+  blockedBy      Block[]         @relation("Block_Blocked")
+  conversations  ConversationMember[]
+  messages       Message[]
+  reactions      Reaction[]
+  readReceipts   ReadReceipt[]
+  callsInitiated Call[]          @relation("Call_Initiator")
+  callsReceived  Call[]          @relation("Call_Receiver")
+  callsMember    CallParticipant[]
+  notifications  Notification[]
+  stories        Story[]
+  reportsFiled   Report[]        @relation("Report_Reporter")
+  reportsAgainst Report[]        @relation("Report_ReportedUser")
+  channelsOwned  Channel[]       @relation("Channel_Owner")
+  channelMembers ChannelMember[]
+  auditLogs      AuditLog[]
+
+  @@index([phone])
+  @@index([email])
+  @@index([username])
+}
+
+enum Role {
+  USER
+  ADMIN
+  MODERATOR
+}
+
+model Profile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName String
+  bio         String?
+  photoUrl    String?
+  status      String?
+  qrCode      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model UserSettings {
+  id                     String           @id @default(cuid())
+  userId                 String           @unique
+  user                   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Privacy
+  phoneVisibility        Visibility       @default(NOBODY)
+  emailVisibility        Visibility       @default(NOBODY)
+  lastSeenVisibility     Visibility       @default(CONTACTS)
+  profilePhotoVisibility Visibility       @default(EVERYONE)
+  whoCanCall             Visibility       @default(CONTACTS)
+  whoCanAddToGroups      Visibility       @default(EVERYONE)
+  whoCanFindByPhone      Visibility       @default(CONTACTS)
+  // Notifications
+  notifMessages          Boolean          @default(true)
+  notifCalls             Boolean          @default(true)
+  notifPreviews          Boolean          @default(true)
+  quietHoursStart        Int?
+  quietHoursEnd          Int?
+  notifSound             String?
+  // Appearance
+  theme                  String           @default("system")
+  accentColor            String           @default("#0088cc")
+  language               String           @default("en")
+  // Data
+  messageRetentionDays   Int?
+  // Two-step verification
+  twoStepEnabled         Boolean          @default(false)
+  twoStepPasswordHash    String?
+
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+}
+
+enum Visibility {
+  EVERYONE
+  CONTACTS
+  NOBODY
+}
+
+model OtpCode {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phone     String?
+  email     String?
+  code      String
+  purpose   String   // "phone_verify" | "email_verify" | "login" | "recovery"
+  expiresAt DateTime
+  consumed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([phone])
+  @@index([email])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token        String   @unique
+  deviceName   String?
+  deviceType   String?  // "web" | "ios" | "android" | "desktop"
+  platform     String?
+  ipAddress    String?
+  lastActive   DateTime @default(now())
+  createdAt     DateTime @default(now())
+  expiresAt    DateTime
+
+  @@index([userId])
+}
+
+// ─── Contacts & Friends ─────────────────────────────────────
+
+model FriendRequest {
+  id        String   @id @default(cuid())
+  senderId  String
+  sender    User     @relation("FriendRequest_Sender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId String
+  receiver  User     @relation("FriendRequest_Receiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  status    String   @default("pending") // "pending" | "accepted" | "rejected" | "cancelled"
+  message   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([senderId, receiverId])
+  @@index([receiverId, status])
+}
+
+model Contact {
+  id         String   @id @default(cuid())
+  ownerId    String
+  owner      User     @relation("Contact_Owner", fields: [ownerId], references: [id], onDelete: Cascade)
+  targetId   String
+  target     User     @relation("Contact_Target", fields: [targetId], references: [id], onDelete: Cascade)
+  nickname   String?
+  isFavorite Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@unique([ownerId, targetId])
+  @@index([targetId])
+}
+
+model Block {
+  id         String   @id @default(cuid())
+  blockerId  String
+  blocker    User     @relation("Block_Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId  String
+  blocked    User     @relation("Block_Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+}
+
+// ─── Conversations & Messages ──────────────────────────────
+
+model Conversation {
+  id          String   @id @default(cuid())
+  type        ConversationType @default(DIRECT)
+  title        String?
+  description String?
+  photoUrl     String?
+  createdBy    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  members      ConversationMember[]
+  messages     Message[]
+  pinnedMessages Message[] @relation("PinnedInConversation")
+
+  @@index([type])
+}
+
+enum ConversationType {
+  DIRECT
+  GROUP
+  CHANNEL
+}
+
+model ConversationMember {
+  id              String   @id @default(cuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role            MemberRole @default(MEMBER)
+  joinedAt        DateTime @default(now())
+  lastReadAt      DateTime?
+  muted           Boolean  @default(false)
+  archived        Boolean  @default(false)
+  draftText       String?
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model Message {
+  id              String   @id @default(cuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId        String
+  sender          User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  text            String?
+  type            MessageType @default(TEXT)
+  replyToId       String?
+  replyTo         Message?  @relation("MessageReply", fields: [replyToId], references: [id], onDelete: NoAction)
+  forwardedFromId String?
+  editedAt        DateTime?
+  deletedFor      String[] @default([])
+  deletedForEveryone Boolean @default(false)
+  pinned          Boolean  @default(false)
+  savedByIds      String[] @default([])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  attachments     Attachment[]
+  reactions       Reaction[]
+  readReceipts    ReadReceipt[]
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+}
+
+enum MessageType {
+  TEXT
+  PHOTO
+  VIDEO
+  VOICE
+  DOCUMENT
+  CONTACT_CARD
+  LOCATION
+  CALL_SIGNAL
+  SYSTEM
+}
+
+model Attachment {
+  id          String   @id @default(cuid())
+  messageId   String
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  fileUrl     String
+  fileType    String
+  fileName    String?
+  fileSize    Int?
+  mimeType    String?
+  thumbnailUrl String?
+  width       Int?
+  height      Int?
+  duration    Int?     // seconds, for video/voice
+  createdAt   DateTime @default(now())
+}
+
+model Reaction {
+  id          String   @id @default(cuid())
+  messageId   String
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji       String
+  createdAt   DateTime @default(now())
+
+  @@unique([messageId, userId, emoji])
+}
+
+model ReadReceipt {
+  id          String   @id @default(cuid())
+  messageId   String
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt      DateTime @default(now())
+
+  @@unique([messageId, userId])
+}
+
+// ─── Calls ──────────────────────────────────────────────────
+
+model Call {
+  id            String   @id @default(cuid())
+  initiatorId   String
+  initiator     User     @relation("Call_Initiator", fields: [initiatorId], references: [id], onDelete: Cascade)
+  receiverId    String?
+  receiver      User?    @relation("Call_Receiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  conversationId String?
+  type          CallType
+  status        CallStatus @default(OUTGOING)
+  startedAt     DateTime?
+  endedAt       DateTime?
+  duration      Int?     // seconds
+  createdAt     DateTime @default(now())
+
+  participants  CallParticipant[]
+
+  @@index([initiatorId])
+  @@index([receiverId])
+}
+
+enum CallType {
+  VOICE
+  VIDEO
+}
+
+enum CallStatus {
+  OUTGOING
+  INCOMING
+  MISSED
+  DECLINED
+  ACCEPTED
+  ENDED
+}
+
+model CallParticipant {
+  id        String   @id @default(cuid())
+  callId    String
+  call      Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime?
+  leftAt   DateTime?
+
+  @@unique([callId, userId])
+}
+
+// ─── Stories ────────────────────────────────────────────────
+
+model Story {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        MessageType @default(PHOTO)
+  mediaUrl    String?
+  text        String?
+  backgroundColor String?
+  audience    Visibility @default(CONTACTS)
+  expiresAt   DateTime
+  viewedBy    String[]  @default([])
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ─── Channels ───────────────────────────────────────────────
+
+model Channel {
+  id          String   @id @default(cuid())
+  username    String   @unique
+  title       String
+  description String?
+  photoUrl    String?
+  ownerId     String
+  owner       User     @relation("Channel_Owner", fields: [ownerId], references: [id], onDelete: Cascade)
+  isPublic    Boolean  @default(true)
+  subscriberCount Int  @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members     ChannelMember[]
+  conversationId String? // links to a Conversation of type CHANNEL for posts
+
+  @@index([username])
+}
+
+model ChannelMember {
+  id          String   @id @default(cuid())
+  channelId   String
+  channel     Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        MemberRole @default(MEMBER)
+  joinedAt    DateTime @default(now())
+
+  @@unique([channelId, userId])
+}
+
+// ─── Notifications ──────────────────────────────────────────
+
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String   // "message" | "call" | "friend_request" | "group_invite" | "channel_update"
+  title       String
+  body        String?
+  data        Json?
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([userId, isRead])
+}
+
+// ─── Reports & Moderation ──────────────────────────────────
+
+model Report {
+  id            String   @id @default(cuid())
+  reporterId    String
+  reporter      User     @relation("Report_Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedUserId String?
+  reportedUser  User?    @relation("Report_ReportedUser", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  reason        String
+  description   String?
+  targetType    String?  // "message" | "user" | "channel" | "group"
+  targetId      String?
+  status        String   @default("pending") // "pending" | "reviewing" | "resolved" | "dismissed"
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  adminId      String
+  admin        User     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  action       String
+  targetType   String?
+  targetId     String?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([adminId])
+  @@index([createdAt])
+}
